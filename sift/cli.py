@@ -5,13 +5,25 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from pathlib import Path
 
 from .core import apply, history, recover, scan, undo
+from .watch import dismiss, inbox_plan, watch_tick
 
 
 def database_path() -> Path:
     return Path(os.environ.get("SIFT_DB", "~/Library/Application Support/Sift/sift.sqlite3")).expanduser()
+
+
+def parse_mappings(values: list[str]) -> dict[str, str]:
+    result = {}
+    for mapping in values:
+        if "=" not in mapping:
+            raise ValueError("Folder mapping must be CATEGORY=FOLDER")
+        category, folder = mapping.split("=", 1)
+        result[category] = folder
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,6 +35,19 @@ def main(argv: list[str] | None = None) -> int:
     scan_cmd.add_argument("--output", type=Path, required=True)
     scan_cmd.add_argument("--map", action="append", default=[], metavar="CATEGORY=FOLDER", help="use a folder inside the destination root for a category")
     scan_cmd.add_argument("--ollama", action="store_true", help="ask local Ollama qwen3:4b-instruct for low-confidence text files")
+    watch_cmd = commands.add_parser("watch", help="queue suggestions for stable new files; never move them")
+    watch_cmd.add_argument("source", type=Path)
+    watch_cmd.add_argument("--to", dest="destination", type=Path, required=True)
+    watch_cmd.add_argument("--interval", type=float, default=3)
+    watch_cmd.add_argument("--stable-seconds", type=float, default=5)
+    watch_cmd.add_argument("--once", action="store_true", help="observe one interval and exit")
+    watch_cmd.add_argument("--map", action="append", default=[], metavar="CATEGORY=FOLDER")
+    watch_cmd.add_argument("--ollama", action="store_true")
+    inbox_cmd = commands.add_parser("inbox", help="export queued suggestions as a reviewable plan")
+    inbox_cmd.add_argument("source", type=Path)
+    inbox_cmd.add_argument("--output", type=Path, required=True)
+    dismiss_cmd = commands.add_parser("dismiss", help="remove a suggestion from the inbox")
+    dismiss_cmd.add_argument("id")
     show_cmd = commands.add_parser("show", help="review a saved plan")
     show_cmd.add_argument("plan", type=Path)
     review_cmd = commands.add_parser("review", help="select and edit proposals in a saved plan")
@@ -38,15 +63,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "scan":
-            folder_map = {}
-            for mapping in args.map:
-                if "=" not in mapping:
-                    raise ValueError("Folder mapping must be CATEGORY=FOLDER")
-                category, folder = mapping.split("=", 1)
-                folder_map[category] = folder
-            plan = scan(args.source, args.destination, folder_map, model="qwen3:4b-instruct" if args.ollama else None)
+            plan = scan(args.source, args.destination, parse_mappings(args.map), model="qwen3:4b-instruct" if args.ollama else None)
             args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
             print(f"Saved {len(plan['items'])} proposals to {args.output}. No files moved.")
+        elif args.command == "watch":
+            if args.interval <= 0:
+                raise ValueError("Watch interval must be positive")
+            while True:
+                result = watch_tick(args.source, args.destination, database_path(), stable_seconds=args.stable_seconds, folder_map=parse_mappings(args.map), model="qwen3:4b-instruct" if args.ollama else None)
+                print(f"Queued now: {result['queued_now']}; pending: {result['pending']}; inbox: {result['inbox']}. No files moved.", flush=True)
+                if args.once:
+                    break
+                time.sleep(args.interval)
+        elif args.command == "inbox":
+            plan = inbox_plan(args.source, database_path())
+            args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+            print(f"Saved {len(plan['items'])} suggestions to {args.output}. No files moved.")
+        elif args.command == "dismiss":
+            if not dismiss(args.id, database_path()):
+                raise ValueError("Suggestion ID not found")
+            print("Suggestion dismissed. No files moved.")
         elif args.command in {"show", "review", "apply"}:
             plan = json.loads(args.plan.read_text(encoding="utf-8"))
             selected = set(args.ids.split(",")) if args.command == "apply" and args.ids else {item["id"] for item in plan["items"] if item.get("selected", False)}
@@ -97,6 +133,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "recover":
             for row in recover(database_path()):
                 print(json.dumps(row))
+        return 0
+    except KeyboardInterrupt:
+        print("\nStopped watching. No files moved.")
         return 0
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         parser.exit(1, f"Sift: {error}\n")

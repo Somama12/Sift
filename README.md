@@ -1,6 +1,6 @@
 # Sift
 
-Sift is a local, preview-first file organizer for macOS. This repository currently contains a Python command-line prototype for the first two safety features: **scan and review proposals**, then **apply and undo guarded moves**. The [product and technical plan](SIFT_PRODUCT_TECHNICAL_PLAN.md) describes the later menu bar app, OCR, local AI, and Autopilot.
+Sift is a local, preview-first file organizer for macOS. This repository contains a Python command-line prototype for **catch-up scans**, **guarded moves with undo**, and an **Autopilot suggestion inbox**. The [product and technical plan](SIFT_PRODUCT_TECHNICAL_PLAN.md) describes the later menu bar app, OCR, and richer local AI.
 
 ## Requirements
 
@@ -32,6 +32,24 @@ Sift uses an existing top-level folder when its name matches a category, ignorin
 
 Sift never deletes files. It only supports moves within one filesystem in this prototype; cross-volume moves fail safely. It resolves name collisions with `(2)`, `(3)`, etc. The default history database is `~/Library/Application Support/Sift/sift.sqlite3`; set `SIFT_DB` to change it. `recover` reconciles interrupted moves, and `undo` does this automatically. An unchanged moved file can be undone if its original path is free. If a file changed or a path is occupied, undo leaves it untouched and reports the conflict.
 
+## Autopilot suggestion mode
+
+```sh
+python3 -m sift watch ~/Downloads --to ~/Documents --interval 3 --stable-seconds 5
+```
+
+The first watch pass records existing files as a baseline. Later passes track newly arrived files, ignore temporary download extensions, and queue a suggestion only after a file's size and modification time remain unchanged for the stable interval. The watcher stores its state in the local Sift database, so files that arrive while it is stopped are found when it restarts. Press Ctrl-C to stop it. It **never moves files**.
+
+In another terminal, export and review the inbox:
+
+```sh
+python3 -m sift inbox ~/Downloads --output /tmp/sift-inbox.plan.json
+python3 -m sift review /tmp/sift-inbox.plan.json
+python3 -m sift apply /tmp/sift-inbox.plan.json
+```
+
+All Autopilot suggestions begin unselected, including installers and screenshots. Use `sift dismiss PROPOSAL_ID` to remove an unwanted suggestion; changing the file later makes it eligible again. `sift watch ... --once` makes one observation and exits, which is useful for testing. `--map` and `--ollama` work with `watch` as they do with `scan`.
+
 ## Run tests
 
 ```sh
@@ -40,7 +58,7 @@ python3 -m unittest discover -s tests -v
 
 ## Current limits
 
-The classifier is intentionally conservative and rule-based by default. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR, encrypted indexing, a menu bar interface, and background watching remain planned features.
+The classifier is intentionally conservative and rule-based by default. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR, encrypted indexing, a menu bar interface, and FSEvents-based background integration remain planned features. The current watcher must be run from a terminal.
 
 ### Optional local model
 

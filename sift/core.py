@@ -156,11 +156,8 @@ def suggest_with_ollama(path: Path, content: str, model: str) -> tuple[str, str]
         connection.close()
 
 
-def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None) -> dict:
-    source = source.expanduser().resolve()
-    destination_root = destination_root.expanduser().resolve()
-    if not source.is_dir():
-        raise ValueError("Source must be a directory")
+def destination_folders(destination_root: Path, folder_map: dict[str, str] | None) -> tuple[dict[str, Path], dict[str, Path]]:
+    """Resolve explicit mappings and discover matching top-level folders."""
     if destination_root.exists() and not destination_root.is_dir():
         raise ValueError("Destination root must be a directory")
     if not destination_root.exists() and not destination_root.parent.is_dir():
@@ -178,7 +175,11 @@ def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None
         check_target(mapped / "placeholder", destination_root)
         mapped_folders[category] = mapped
     existing = {entry.name.casefold(): entry for entry in destination_root.iterdir() if entry.is_dir() and not entry.is_symlink()} if destination_root.exists() else {}
-    items = []
+    return mapped_folders, existing
+
+
+def eligible_files(source: Path, destination_root: Path):
+    """Yield regular files while excluding packages, projects, and incomplete downloads."""
     for root, dirs, files in os.walk(source, followlinks=False):
         folder = Path(root)
         if inside(folder, destination_root) or (folder / ".git").exists():
@@ -187,27 +188,47 @@ def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None
         dirs[:] = [name for name in dirs if not name.startswith(".") and name not in SKIP_DIRS and Path(name).suffix.lower() not in PACKAGES and not (folder / name).is_symlink() and not (folder / name / ".git").exists() and not inside(folder / name, destination_root)]
         for name in files:
             path = folder / name
-            if name.startswith(".") or path.suffix.lower() in TEMP or path.is_symlink():
-                continue
-            try:
-                before = fingerprint(path)
-                content, extraction_status = extract(path)
-                if fingerprint(path) != before:
+            if not name.startswith(".") and path.suffix.lower() not in TEMP and not path.is_symlink():
+                try:
+                    fingerprint(path)
+                    yield path
+                except (OSError, ValueError):
                     continue
-                category, confidence, reason = classify(path, content)
-                proposed_name = propose_name(path, content)
-                model_status = "not_requested"
-                if model and confidence == "low" and content.strip():
-                    suggestion = suggest_with_ollama(path, content, model)
-                    if suggestion:
-                        category, proposed_name = suggestion
-                        confidence, reason, model_status = "low", "local model suggestion", "used"
-                    else:
-                        model_status = "unavailable_or_invalid"
-                target_folder = mapped_folders.get(category) or existing.get(category.casefold()) or destination_root / category
-                items.append({"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(target_folder), "name": proposed_name, "category": category, "confidence": confidence, "reason": reason, "extraction_status": extraction_status, "model_status": model_status, "fingerprint": before, "selected": confidence == "high"})
-            except (OSError, ValueError):
-                continue
+
+
+def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[str, Path], existing: dict[str, Path], model: str | None) -> dict | None:
+    try:
+        before = fingerprint(path)
+        content, extraction_status = extract(path)
+        if fingerprint(path) != before:
+            return None
+        category, confidence, reason = classify(path, content)
+        proposed_name = propose_name(path, content)
+        model_status = "not_requested"
+        if model and confidence == "low" and content.strip():
+            suggestion = suggest_with_ollama(path, content, model)
+            if suggestion:
+                category, proposed_name = suggestion
+                confidence, reason, model_status = "low", "local model suggestion", "used"
+            else:
+                model_status = "unavailable_or_invalid"
+        target_folder = mapped_folders.get(category) or existing.get(category.casefold()) or destination_root / category
+        return {"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(target_folder), "name": proposed_name, "category": category, "confidence": confidence, "reason": reason, "extraction_status": extraction_status, "model_status": model_status, "fingerprint": before, "selected": confidence == "high"}
+    except (OSError, ValueError):
+        return None
+
+
+def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None) -> dict:
+    source = source.expanduser().resolve()
+    destination_root = destination_root.expanduser().resolve()
+    if not source.is_dir():
+        raise ValueError("Source must be a directory")
+    mapped_folders, existing = destination_folders(destination_root, folder_map)
+    items = []
+    for path in eligible_files(source, destination_root):
+        item = proposal_for_file(path, destination_root, mapped_folders, existing, model)
+        if item:
+            items.append(item)
     return {"version": 1, "created_at": now(), "source": str(source), "destination_root": str(destination_root), "items": sorted(items, key=lambda item: item["source"])}
 
 
