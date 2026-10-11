@@ -92,7 +92,7 @@ class SiftTests(unittest.TestCase):
         connection.getresponse.return_value = response
         with patch("sift.core.http.client.HTTPConnection", return_value=connection) as constructor:
             plan = scan(self.source, self.destination, model="qwen3:4b-instruct")
-        constructor.assert_called_once_with("127.0.0.1", 11434, timeout=15)
+        constructor.assert_called_once_with("127.0.0.1", 11434, timeout=90)
         payload = json.loads(connection.request.call_args.kwargs["body"])
         self.assertEqual(payload["model"], "qwen3:4b-instruct")
         item = plan["items"][0]

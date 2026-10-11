@@ -136,7 +136,8 @@ def suggest_with_ollama(path: Path, content: str, model: str) -> tuple[str, str]
             {"role": "user", "content": f"Original filename: {path.name}\nDocument text:\n{content[:6000]}"},
         ],
     }
-    connection = http.client.HTTPConnection("127.0.0.1", 11434, timeout=15)
+    # A first local model load can take longer than inference, especially on 8 GB Macs.
+    connection = http.client.HTTPConnection("127.0.0.1", 11434, timeout=90)
     try:
         connection.request("POST", "/api/chat", body=json.dumps(payload), headers={"Content-Type": "application/json"})
         response = connection.getresponse()
