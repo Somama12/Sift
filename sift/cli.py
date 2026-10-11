@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("Unknown proposal ID")
             for item in sorted(plan["items"], key=lambda item: (item["destination_folder"], item["source"])):
                 if args.command == "review":
-                    print(f"\n[{item['confidence']}] {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']})")
+                    print(f"\n[{item['confidence']}] {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')})")
                     choice = input("Approve? [y/N/e] (e = edit destination/name): ").strip().lower()
                     if choice == "e":
                         folder = input(f"Destination folder [{item['destination_folder']}]: ").strip()
@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
                         item["selected"] = choice in {"y", "yes"}
                 elif args.command == "show" or item["id"] in selected:
                     mark = "x" if item.get("selected") else " "
-                    print(f"[{mark}] [{item['confidence']}] {item['id']}  {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']})")
+                    print(f"[{mark}] [{item['confidence']}] {item['id']}  {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')})")
             if args.command == "review":
                 args.plan.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
                 print(f"Saved review: {sum(item['selected'] for item in plan['items'])} selected. No files moved.")

@@ -46,14 +46,36 @@ def digest(path: Path) -> str:
     return hashed.hexdigest()
 
 
-def extract(path: Path) -> str:
-    if path.suffix.lower() not in {".txt", ".md", ".csv"}:
-        return ""
-    try:
-        with path.open("rb") as stream:
-            return stream.read(64_000).decode("utf-8", errors="replace")
-    except OSError:
-        return ""
+def extract(path: Path) -> tuple[str, str]:
+    extension = path.suffix.lower()
+    if extension in {".txt", ".md", ".csv"}:
+        try:
+            with path.open("rb") as stream:
+                return stream.read(64_000).decode("utf-8", errors="replace"), "text"
+        except OSError:
+            return "", "unreadable"
+    if extension == ".pdf":
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return "", "pdf_support_not_installed"
+        try:
+            if path.stat().st_size > 20_000_000:
+                return "", "pdf_too_large"
+            reader = PdfReader(str(path), strict=False)
+            if reader.is_encrypted:
+                return "", "encrypted_pdf"
+            pages = []
+            for page_number in range(min(len(reader.pages), 10)):
+                page = reader.pages[page_number]
+                pages.append(page.extract_text() or "")
+                if sum(len(part) for part in pages) >= 64_000:
+                    break
+            content = "\n".join(pages)[:64_000]
+            return content, "pdf_text" if content.strip() else "pdf_no_text"
+        except Exception:
+            return "", "pdf_unreadable"
+    return "", "unsupported"
 
 
 def classify(path: Path, content: str) -> tuple[str, str, str]:
@@ -123,12 +145,12 @@ def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None
                 continue
             try:
                 before = fingerprint(path)
-                content = extract(path)
+                content, extraction_status = extract(path)
                 if fingerprint(path) != before:
                     continue
                 category, confidence, reason = classify(path, content)
                 target_folder = mapped_folders.get(category) or existing.get(category.casefold()) or destination_root / category
-                items.append({"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(target_folder), "name": propose_name(path, content), "category": category, "confidence": confidence, "reason": reason, "fingerprint": before, "selected": confidence == "high"})
+                items.append({"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(target_folder), "name": propose_name(path, content), "category": category, "confidence": confidence, "reason": reason, "extraction_status": extraction_status, "fingerprint": before, "selected": confidence == "high"})
             except (OSError, ValueError):
                 continue
     return {"version": 1, "created_at": now(), "source": str(source), "destination_root": str(destination_root), "items": sorted(items, key=lambda item: item["source"])}

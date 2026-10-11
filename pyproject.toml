@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sift-local-organizer"
+version = "0.1.0"
+description = "Local, preview-first file organizer prototype for macOS"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+pdf = ["pypdf>=5,<7"]
+
+[project.scripts]
+sift = "sift.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sift*"]

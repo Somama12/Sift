@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import json
+import importlib.util
 from pathlib import Path
 from unittest.mock import patch
 
@@ -70,6 +71,17 @@ class SiftTests(unittest.TestCase):
         self.assertEqual(plan["items"][0]["destination_folder"], str(target.resolve()))
         with self.assertRaises(ValueError):
             scan(self.source, self.destination, {"Receipts": "../outside"})
+
+    @unittest.skipUnless(importlib.util.find_spec("pypdf"), "PDF extra is not installed")
+    def test_extracts_text_from_pdf(self):
+        fixture = Path(__file__).parent / "fixtures" / "invoice.pdf"
+        file = self.source / "scan004.pdf"
+        file.write_bytes(fixture.read_bytes())
+        plan = scan(self.source, self.destination)
+        self.assertEqual(len(plan["items"]), 1)
+        self.assertEqual(plan["items"][0]["category"], "Receipts")
+        self.assertEqual(plan["items"][0]["extraction_status"], "pdf_text")
+        self.assertIn("Invoice", plan["items"][0]["name"])
 
     def test_undo_refuses_changed_destination(self):
         (self.source / "receipt.txt").write_text("original", encoding="utf-8")

@@ -4,7 +4,14 @@ Sift is a local, preview-first file organizer for macOS. This repository current
 
 ## Requirements
 
-Python 3.10 or later. No third-party packages or network service are required. This prototype reads filenames and UTF-8 text in `.txt`, `.md`, and `.csv` files. It does not yet understand PDFs or image contents, so those files may go to `Review`.
+Python 3.10 or later. The core commands require no third-party packages or network service. Sift reads UTF-8 text in `.txt`, `.md`, and `.csv` files. For text-based PDFs, install the optional PDF extra in a virtual environment:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[pdf]'
+```
+
+Then use `.venv/bin/python -m sift` in the commands below. PDF extraction reads at most the first 10 pages and 64,000 characters from PDFs smaller than 20 MB. The plan records an `extraction_status` for each file. Scanned/image-only and encrypted PDFs are not yet understood and usually go to `Review`.
 
 ## Try it on a test folder
 
@@ -33,4 +40,4 @@ python3 -m unittest discover -s tests -v
 
 ## Current limits
 
-The classifier is intentionally conservative and rule-based. This release does **not** claim AI document understanding. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR, PDF extraction, local model inference, encrypted indexing, a menu bar interface, and background watching remain planned features.
+The classifier is intentionally conservative and rule-based. This release does **not** claim AI document understanding. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR, local model inference, encrypted indexing, a menu bar interface, and background watching remain planned features. The planned prototype model runtime is Ollama with `qwen3:4b-instruct` for ambiguous files, subject to local quality and performance tests; it is not installed or used by this version.
