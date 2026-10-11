@@ -2,6 +2,8 @@ import tempfile
 import unittest
 import json
 import importlib.util
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -62,6 +64,22 @@ class SiftTests(unittest.TestCase):
         with patch("builtins.input", return_value="y"):
             self.assertEqual(main(["review", str(plan_file)]), 0)
         self.assertTrue(json.loads(plan_file.read_text())["items"][0]["selected"])
+
+    def test_group_review_approves_one_group_and_inspects_another(self):
+        (self.source / "contract.txt").write_text("Agreement", encoding="utf-8")
+        (self.source / "invoice.txt").write_text("Invoice", encoding="utf-8")
+        (self.source / "receipt.txt").write_text("Receipt", encoding="utf-8")
+        plan_file = self.root / "plan.json"
+        plan_file.write_text(json.dumps(scan(self.source, self.destination)), encoding="utf-8")
+        output = io.StringIO()
+        with patch("builtins.input", side_effect=["a", "i", "y", "n"]), redirect_stdout(output):
+            self.assertEqual(main(["review", str(plan_file), "--groups"]), 0)
+        items = {Path(item["source"]).name: item for item in json.loads(plan_file.read_text())["items"]}
+        self.assertTrue(items["contract.txt"]["selected"])
+        self.assertTrue(items["invoice.txt"]["selected"])
+        self.assertFalse(items["receipt.txt"]["selected"])
+        self.assertIn("2 proposals", output.getvalue())
+        self.assertTrue((self.source / "contract.txt").exists())
 
     def test_folder_mapping_uses_existing_structure(self):
         (self.source / "receipt.txt").write_text("example", encoding="utf-8")

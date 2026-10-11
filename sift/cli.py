@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import time
+from itertools import groupby
 from pathlib import Path
 
 from .core import apply, duplicates, history, recover, scan, search, undo
@@ -24,6 +25,43 @@ def parse_mappings(values: list[str]) -> dict[str, str]:
         category, folder = mapping.split("=", 1)
         result[category] = folder
     return result
+
+
+def review_item(item: dict) -> None:
+    print(f"\n[{item['confidence']}] {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')}; model: {item.get('model_status', 'not_requested')})")
+    choice = input("Approve? [y/N/e] (e = edit destination/name): ").strip().lower()
+    if choice == "e":
+        folder = input(f"Destination folder [{item['destination_folder']}]: ").strip()
+        name = input(f"Name [{item['name']}]: ").strip()
+        if folder:
+            item["destination_folder"] = folder
+        if name:
+            item["name"] = name
+        item["selected"] = True
+    else:
+        item["selected"] = choice in {"y", "yes"}
+
+
+def review_groups(items: list[dict]) -> None:
+    for destination, members in groupby(sorted(items, key=lambda item: (item["destination_folder"], item["source"])), key=lambda item: item["destination_folder"]):
+        group = list(members)
+        selected = sum(bool(item.get("selected")) for item in group)
+        print(f"\n{destination}: {len(group)} proposals, {selected} selected")
+        for item in group:
+            mark = "x" if item.get("selected") else " "
+            print(f"  [{mark}] [{item['confidence']}] {item['source']} -> {item['name']} ({item['reason']})")
+        choice = input("Group: [a]pprove all, [n]one, [i]nspect each, Enter keep: ").strip().lower()
+        if choice in {"a", "approve"}:
+            for item in group:
+                item["selected"] = True
+        elif choice in {"n", "none"}:
+            for item in group:
+                item["selected"] = False
+        elif choice in {"i", "inspect"}:
+            for item in group:
+                review_item(item)
+        elif choice:
+            raise ValueError(f"Unknown group choice: {choice}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     show_cmd.add_argument("plan", type=Path)
     review_cmd = commands.add_parser("review", help="select and edit proposals in a saved plan")
     review_cmd.add_argument("plan", type=Path)
+    review_cmd.add_argument("--groups", action="store_true", help="approve or reject proposals by destination folder")
     apply_cmd = commands.add_parser("apply", help="apply reviewed proposals")
     apply_cmd.add_argument("plan", type=Path)
     apply_cmd.add_argument("--ids", help="comma-separated proposal IDs; omit to select all")
@@ -105,20 +144,14 @@ def main(argv: list[str] | None = None) -> int:
             known = {item["id"] for item in plan["items"]}
             if not selected <= known:
                 raise ValueError("Unknown proposal ID")
+            if args.command == "review" and args.groups:
+                review_groups(plan["items"])
+                args.plan.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+                print(f"Saved review: {sum(item['selected'] for item in plan['items'])} selected. No files moved.")
+                return 0
             for item in sorted(plan["items"], key=lambda item: (item["destination_folder"], item["source"])):
                 if args.command == "review":
-                    print(f"\n[{item['confidence']}] {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')}; model: {item.get('model_status', 'not_requested')})")
-                    choice = input("Approve? [y/N/e] (e = edit destination/name): ").strip().lower()
-                    if choice == "e":
-                        folder = input(f"Destination folder [{item['destination_folder']}]: ").strip()
-                        name = input(f"Name [{item['name']}]: ").strip()
-                        if folder:
-                            item["destination_folder"] = folder
-                        if name:
-                            item["name"] = name
-                        item["selected"] = True
-                    else:
-                        item["selected"] = choice in {"y", "yes"}
+                    review_item(item)
                 elif args.command == "show" or item["id"] in selected:
                     mark = "x" if item.get("selected") else " "
                     print(f"[{mark}] [{item['confidence']}] {item['id']}  {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')}; model: {item.get('model_status', 'not_requested')})")
