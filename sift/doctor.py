@@ -12,7 +12,7 @@ import shutil
 def diagnose() -> dict:
     pdf_text = importlib.util.find_spec("pypdf") is not None
     image_ocr = shutil.which("tesseract") is not None
-    pdf_renderer = shutil.which("pdftoppm") is not None
+    pdf_renderer = shutil.which("pdftoppm") is not None or (importlib.util.find_spec("pypdfium2") is not None and importlib.util.find_spec("PIL") is not None)
     result = {
         "python": platform.python_version(),
         "pdf_text": pdf_text,

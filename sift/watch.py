@@ -55,7 +55,7 @@ def watch_tick(source: Path, destination_root: Path, db_path: Path, *, stable_se
                 connection.execute("UPDATE watch_files SET fingerprint=?, state='pending', stable_since=?, updated_at=?, proposal=NULL WHERE source=? AND path=?", (encoded, moment, moment, str(source), str(path)))
             continue
         if saved["state"] == "pending" and moment - saved["stable_since"] >= stable_seconds:
-            proposal = proposal_for_file(path, destination_root, mapped, existing, model)
+            proposal = proposal_for_file(path, destination_root, mapped, existing, model, db_path)
             if proposal is None or proposal["fingerprint"] != current:
                 continue
             proposal["selected"] = False  # Autopilot starts in suggestion mode for every category.

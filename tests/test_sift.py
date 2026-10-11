@@ -45,6 +45,13 @@ class SiftTests(unittest.TestCase):
         self.assertEqual(len(plan["items"]), 2)
         self.assertTrue(first.exists() and second.exists())
 
+    def test_conflicting_content_categories_go_to_review(self):
+        (self.source / "scan009.txt").write_text("Invoice and residential lease", encoding="utf-8")
+        item = scan(self.source, self.destination)["items"][0]
+        self.assertEqual(item["category"], "Review")
+        self.assertEqual(item["reason"], "conflicting category signals")
+        self.assertFalse(item["selected"])
+
     def test_apply_collision_and_batch_undo(self):
         (self.source / "receipt.txt").write_text("first", encoding="utf-8")
         (self.source / "other").mkdir()

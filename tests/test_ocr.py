@@ -45,6 +45,15 @@ class OCRTests(unittest.TestCase):
         self.assertIn("LEASE", item["name"])
         self.assertFalse(item["selected"])
 
+    @unittest.skipUnless(shutil.which("tesseract") and importlib.util.find_spec("pypdfium2") and importlib.util.find_spec("PIL"), "Embedded PDF OCR tools are not installed")
+    def test_scanned_pdf_ocr_without_poppler(self):
+        (self.source / "scan001.pdf").write_bytes((self.fixtures / "lease_scan.pdf").read_bytes())
+        original_which = shutil.which
+        with patch("sift.core.shutil.which", side_effect=lambda program: None if program == "pdftoppm" else original_which(program)):
+            item = scan(self.source, self.destination)["items"][0]
+        self.assertEqual(item["extraction_status"], "pdf_ocr")
+        self.assertEqual(item["category"], "Contracts")
+
 
 if __name__ == "__main__":
     unittest.main()

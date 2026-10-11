@@ -22,11 +22,11 @@ PACKAGES = {".app", ".bundle", ".framework", ".photoslibrary", ".pages", ".numbe
 TEMP = {".crdownload", ".download", ".part", ".partial", ".tmp"}
 IMAGES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 KEYWORDS = {
-    "Receipts": ("receipt", "invoice"),
-    "Bills": ("bill", "statement", "utility"),
-    "School": ("lecture", "assignment", "homework", "syllabus"),
-    "Travel": ("flight", "itinerary", "boarding", "hotel"),
-    "Contracts": ("contract", "lease", "agreement"),
+    "Receipts": ("receipt", "invoice", "payment confirmation"),
+    "Bills": ("bill", "statement", "utility", "amount due", "electricity"),
+    "School": ("lecture", "assignment", "homework", "syllabus", "coursework"),
+    "Travel": ("flight", "itinerary", "boarding pass", "hotel reservation"),
+    "Contracts": ("contract", "lease", "agreement", "non disclosure"),
 }
 
 
@@ -112,21 +112,44 @@ def ocr_image(path: Path) -> tuple[str, str]:
 def ocr_pdf(path: Path) -> tuple[str, str]:
     """Render at most two scanned PDF pages locally for OCR."""
     renderer = shutil.which("pdftoppm")
-    if renderer is None or shutil.which("tesseract") is None:
+    if shutil.which("tesseract") is None:
         return "", "ocr_unavailable"
     try:
         with tempfile.TemporaryDirectory(prefix="sift-ocr-") as directory:
-            prefix = Path(directory) / "page"
-            result = subprocess.run([renderer, "-f", "1", "-l", "2", "-r", "150", "-scale-to", "2000", "-png", str(path), str(prefix)], capture_output=True, timeout=30, check=False)
-            if result.returncode != 0:
-                return "", "ocr_failed"
+            if renderer:
+                prefix = Path(directory) / "page"
+                result = subprocess.run([renderer, "-f", "1", "-l", "2", "-r", "150", "-scale-to", "2000", "-png", str(path), str(prefix)], capture_output=True, timeout=30, check=False)
+                if result.returncode != 0:
+                    return "", "ocr_failed"
+            else:
+                try:
+                    import pypdfium2
+                    import PIL  # required by bitmap.to_pil()
+                except ImportError:
+                    return "", "ocr_unavailable"
+                document = pypdfium2.PdfDocument(str(path))
+                try:
+                    for index in range(min(len(document), 2)):
+                        page = document[index]
+                        try:
+                            width, height = page.get_size()
+                            scale = min(150 / 72, 2000 / max(width, height))
+                            bitmap = page.render(scale=scale)
+                            try:
+                                bitmap.to_pil().save(Path(directory) / f"page-{index + 1}.png")
+                            finally:
+                                bitmap.close()
+                        finally:
+                            page.close()
+                finally:
+                    document.close()
             pages = []
             for image in sorted(Path(directory).glob("page-*.png")):
                 content, _ = ocr_image(image)
                 pages.append(content)
             text = "\n".join(pages)[:64_000]
             return text, "pdf_ocr" if text.strip() else "pdf_no_text"
-    except (OSError, subprocess.TimeoutExpired):
+    except Exception:
         return "", "ocr_failed"
 
 
@@ -137,13 +160,22 @@ def classify(path: Path, content: str) -> tuple[str, str, str]:
         return "Installers", "high", "installer file type"
     if "screenshot" in stem or "screen shot" in stem:
         return "Screenshots", "high", "screenshot filename"
-    for category, words in KEYWORDS.items():
-        if any(re.search(r"\b" + word + r"\b", stem) for word in words):
-            return category, "medium", "filename keyword"
     text = content[:5000].lower()
+    signals = []
     for category, words in KEYWORDS.items():
-        if any(re.search(r"\b" + word + r"\b", text) for word in words):
-            return category, "low", "content keyword"
+        name_hits = [word for word in words if re.search(r"\b" + re.escape(word) + r"\b", stem)]
+        text_hits = [word for word in words if re.search(r"\b" + re.escape(word) + r"\b", text)]
+        score = len(name_hits) * 3 + sum(0.5 if word == "amount due" else 1 for word in text_hits)
+        if score:
+            signals.append((score, category, name_hits, text_hits))
+    if signals:
+        signals.sort(key=lambda entry: entry[0], reverse=True)
+        if len(signals) > 1 and signals[0][0] == signals[1][0]:
+            return "Review", "low", "conflicting category signals"
+        _, category, name_hits, text_hits = signals[0]
+        if name_hits:
+            return category, "medium", f"filename keyword: {name_hits[0]}"
+        return category, "low", f"content keyword: {text_hits[0]}"
     return "Review", "low", "no reliable category"
 
 
@@ -247,7 +279,7 @@ def eligible_files(source: Path, destination_root: Path | None):
                     continue
 
 
-def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[str, Path], existing: dict[str, Path], model: str | None) -> dict | None:
+def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[str, Path], existing: dict[str, Path], model: str | None, correction_db_path: Path | None = None) -> dict | None:
     try:
         before = fingerprint(path)
         content, extraction_status = extract(path)
@@ -256,20 +288,31 @@ def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[s
         category, confidence, reason = classify(path, content)
         proposed_name = propose_name(path, content)
         model_status = "not_requested"
-        if model and confidence == "low" and content.strip():
+        correction = correction_for_file(path, correction_db_path) if correction_db_path else None
+        if correction:
+            relative, chosen_name = correction
+            target_folder = destination_root / relative
+            try:
+                check_target(target_folder / chosen_name, destination_root)
+                proposed_name = safe_name(Path(chosen_name).stem) + path.suffix.lower()
+                confidence, reason = "medium", "saved correction for identical file"
+            except ValueError:
+                correction = None
+        elif model and confidence == "low" and content.strip():
             suggestion = suggest_with_ollama(path, content, model)
             if suggestion:
                 category, proposed_name = suggestion
                 confidence, reason, model_status = "low", "local model suggestion", "used"
             else:
                 model_status = "unavailable_or_invalid"
-        target_folder = mapped_folders.get(category) or existing.get(category.casefold()) or destination_root / category
-        return {"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(target_folder), "name": proposed_name, "category": category, "confidence": confidence, "reason": reason, "extraction_status": extraction_status, "model_status": model_status, "fingerprint": before, "selected": confidence == "high"}
+        if not correction:
+            target_folder = mapped_folders.get(category) or existing.get(category.casefold()) or destination_root / category
+        return {"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(target_folder), "initial_destination_folder": str(target_folder), "name": proposed_name, "initial_name": proposed_name, "category": category, "confidence": confidence, "reason": reason, "extraction_status": extraction_status, "model_status": model_status, "fingerprint": before, "selected": confidence == "high" and not correction}
     except (OSError, ValueError):
         return None
 
 
-def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None, on_progress: Callable[[int, Path], None] | None = None) -> dict:
+def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None, on_progress: Callable[[int, Path], None] | None = None, db_path: Path | None = None) -> dict:
     source = source.expanduser().resolve()
     destination_root = destination_root.expanduser().resolve()
     if not source.is_dir():
@@ -279,7 +322,7 @@ def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None
     for number, path in enumerate(eligible_files(source, destination_root), start=1):
         if on_progress is not None:
             on_progress(number, path)
-        item = proposal_for_file(path, destination_root, mapped_folders, existing, model)
+        item = proposal_for_file(path, destination_root, mapped_folders, existing, model, db_path)
         if item:
             items.append(item)
     return {"version": 1, "created_at": now(), "source": str(source), "destination_root": str(destination_root), "items": sorted(items, key=lambda item: item["source"])}
@@ -322,36 +365,67 @@ def search(source: Path, query: str, limit: int = 20) -> list[dict]:
         raise ValueError("Search source must be a directory")
     if limit < 1:
         raise ValueError("Search limit must be positive")
+    query = query.casefold()
+    extensions = {match.lstrip(".") for match in re.findall(r"\bext:([\w.]+)", query)}
+    years = {int(match) for match in re.findall(r"\byear:(\d{4})\b", query)}
+    query = re.sub(r"\b(?:ext:[\w.]+|year:\d{4})\b", " ", query)
+    if "last year" in query:
+        years.add(datetime.now().year - 1)
+        query = query.replace("last year", " ")
     stopwords = {"find", "show", "me", "my", "the", "a", "an", "from", "for", "in", "of", "to", "file", "files", "document", "documents"}
-    terms = [term for term in re.findall(r"\w+", query.casefold()) if term not in stopwords and len(term) > 1]
-    if not terms:
-        raise ValueError("Search query needs a descriptive word")
+    terms = list(dict.fromkeys(term for term in re.findall(r"\w+", query) if term not in stopwords and len(term) > 1))
+    if not terms and not extensions and not years:
+        raise ValueError("Search query needs a descriptive word or filter")
     matches = []
     for path in eligible_files(source, None):
         try:
             before = fingerprint(path)
+            if extensions and path.suffix.lower().lstrip(".") not in extensions:
+                continue
+            if years and datetime.fromtimestamp(before["mtime_ns"] / 1_000_000_000).year not in years:
+                continue
             content, extraction_status = extract(path)
             if fingerprint(path) != before:
                 continue
             name = path.name.casefold()
             text = content.casefold()
+            if not all(term in name or term in text for term in terms):
+                continue
             score = sum(5 * name.count(term) + min(text.count(term), 3) for term in terms)
-            if score:
-                matches.append({"path": str(path), "score": score, "extraction_status": extraction_status})
+            matches.append({"path": str(path), "score": score or 1, "extraction_status": extraction_status})
         except (OSError, ValueError):
             continue
     return sorted(matches, key=lambda result: (-result["score"], result["path"]))[:limit]
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     connection = sqlite3.connect(db_path)
+    os.chmod(db_path, 0o600)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys=ON")
     connection.execute("CREATE TABLE IF NOT EXISTS batches (id TEXT PRIMARY KEY, created_at TEXT NOT NULL)")
     connection.execute("CREATE TABLE IF NOT EXISTS moves (id TEXT PRIMARY KEY, batch_id TEXT NOT NULL REFERENCES batches(id), source TEXT NOT NULL, destination TEXT NOT NULL, sha256 TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")
+    connection.execute("CREATE TABLE IF NOT EXISTS corrections (sha256 TEXT PRIMARY KEY, size INTEGER NOT NULL, relative_folder TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL)")
     connection.commit()
     return connection
+
+
+def correction_for_file(path: Path, db_path: Path) -> tuple[str, str] | None:
+    try:
+        connection = connect(db_path)
+    except (OSError, sqlite3.Error):
+        return None
+    try:
+        size = path.stat().st_size
+        if not connection.execute("SELECT 1 FROM corrections WHERE size=? LIMIT 1", (size,)).fetchone():
+            return None
+        row = connection.execute("SELECT relative_folder, name FROM corrections WHERE sha256=? AND size=?", (digest(path), size)).fetchone()
+        return (row["relative_folder"], row["name"]) if row else None
+    except (OSError, sqlite3.Error):
+        return None
+    finally:
+        connection.close()
 
 
 def check_target(path: Path, root: Path) -> None:
@@ -419,6 +493,13 @@ def apply(plan: dict, selected_ids: set[str], db_path: Path) -> tuple[str, list[
             os.unlink(source)
             with connection:
                 connection.execute("UPDATE moves SET state='applied', updated_at=? WHERE id=?", (now(), item["id"]))
+            if item.get("initial_destination_folder") != item["destination_folder"] or item.get("initial_name") != item["name"]:
+                try:
+                    relative = str(Path(item["destination_folder"]).relative_to(Path(plan["destination_root"])))
+                    with connection:
+                        connection.execute("INSERT OR REPLACE INTO corrections VALUES (?, ?, ?, ?, ?)", (sha, item["fingerprint"]["size"], relative, item["name"], now()))
+                except (ValueError, sqlite3.Error):
+                    pass  # The move succeeded even if remembering this edit failed.
             results.append({"id": item["id"], "state": "applied", "destination": str(target)})
         except (OSError, ValueError, KeyError, sqlite3.Error) as error:
             results.append({"id": item.get("id"), "state": "failed", "error": str(error)})

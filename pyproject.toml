@@ -9,7 +9,7 @@ description = "Local, preview-first file organizer prototype for macOS"
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-pdf = ["pypdf>=5,<7"]
+pdf = ["pypdf>=5,<7", "pypdfium2>=5,<6", "pillow>=11,<13"]
 
 [project.scripts]
 sift = "sift.cli:main"

@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "scan":
-            plan = scan(args.source, args.destination, parse_mappings(args.map), model="qwen3:4b-instruct" if args.ollama else None, on_progress=lambda number, path: print(f"Scanning {number}: {path}", file=sys.stderr, flush=True))
+            plan = scan(args.source, args.destination, parse_mappings(args.map), model="qwen3:4b-instruct" if args.ollama else None, on_progress=lambda number, path: print(f"Scanning {number}: {path}", file=sys.stderr, flush=True), db_path=database_path())
             args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
             print(f"Saved {len(plan['items'])} proposals to {args.output}. No files moved.")
         elif args.command == "watch":

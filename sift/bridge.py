@@ -21,7 +21,7 @@ def handle(request: dict) -> dict:
         source = Path(request["source"])
         destination = Path(request["destination"])
         model = "qwen3:4b-instruct" if request.get("ollama") is True else None
-        return {"plan": scan(source, destination, request.get("folder_map"), model=model)}
+        return {"plan": scan(source, destination, request.get("folder_map"), model=model, db_path=database_path())}
     if command == "apply":
         plan = request["plan"]
         selected = set(request["selected_ids"])
