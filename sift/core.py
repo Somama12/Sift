@@ -7,8 +7,11 @@ import http.client
 import json
 import os
 import re
+import shutil
 import sqlite3
 import stat
+import subprocess
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +19,7 @@ from pathlib import Path
 SKIP_DIRS = {".git", ".svn", "node_modules", ".venv", "venv", "__pycache__"}
 PACKAGES = {".app", ".bundle", ".framework", ".photoslibrary", ".pages", ".numbers", ".key"}
 TEMP = {".crdownload", ".download", ".part", ".partial", ".tmp"}
+IMAGES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 KEYWORDS = {
     "Receipts": ("receipt", "invoice"),
     "Bills": ("bill", "statement", "utility"),
@@ -74,10 +78,55 @@ def extract(path: Path) -> tuple[str, str]:
                 if sum(len(part) for part in pages) >= 64_000:
                     break
             content = "\n".join(pages)[:64_000]
-            return content, "pdf_text" if content.strip() else "pdf_no_text"
+            if content.strip():
+                return content, "pdf_text"
+            return ocr_pdf(path)
         except Exception:
             return "", "pdf_unreadable"
+    if extension in IMAGES:
+        try:
+            if path.stat().st_size > 20_000_000:
+                return "", "image_too_large"
+        except OSError:
+            return "", "image_unreadable"
+        return ocr_image(path)
     return "", "unsupported"
+
+
+def ocr_image(path: Path) -> tuple[str, str]:
+    """Read image text with a local OCR process, when installed."""
+    executable = shutil.which("tesseract")
+    if executable is None:
+        return "", "ocr_unavailable"
+    try:
+        result = subprocess.run([executable, str(path), "stdout", "-l", "eng"], capture_output=True, timeout=30, check=False)
+        if result.returncode != 0:
+            return "", "ocr_failed"
+        content = result.stdout.decode("utf-8", errors="replace")[:64_000]
+        return content, "image_ocr" if content.strip() else "image_no_text"
+    except (OSError, subprocess.TimeoutExpired):
+        return "", "ocr_failed"
+
+
+def ocr_pdf(path: Path) -> tuple[str, str]:
+    """Render at most two scanned PDF pages locally for OCR."""
+    renderer = shutil.which("pdftoppm")
+    if renderer is None or shutil.which("tesseract") is None:
+        return "", "ocr_unavailable"
+    try:
+        with tempfile.TemporaryDirectory(prefix="sift-ocr-") as directory:
+            prefix = Path(directory) / "page"
+            result = subprocess.run([renderer, "-f", "1", "-l", "2", "-r", "150", "-scale-to", "2000", "-png", str(path), str(prefix)], capture_output=True, timeout=30, check=False)
+            if result.returncode != 0:
+                return "", "ocr_failed"
+            pages = []
+            for image in sorted(Path(directory).glob("page-*.png")):
+                content, _ = ocr_image(image)
+                pages.append(content)
+            text = "\n".join(pages)[:64_000]
+            return text, "pdf_ocr" if text.strip() else "pdf_no_text"
+    except (OSError, subprocess.TimeoutExpired):
+        return "", "ocr_failed"
 
 
 def classify(path: Path, content: str) -> tuple[str, str, str]:

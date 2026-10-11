@@ -11,7 +11,7 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[pdf]'
 ```
 
-Then use `.venv/bin/python -m sift` in the commands below. PDF extraction reads at most the first 10 pages and 64,000 characters from PDFs smaller than 20 MB. The plan records an `extraction_status` for each file. Scanned/image-only and encrypted PDFs are not yet understood and usually go to `Review`.
+Then use `.venv/bin/python -m sift` in the commands below. PDF text extraction reads at most the first 10 pages and 64,000 characters from PDFs smaller than 20 MB. For local OCR of `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`, and `.webp` images, install Tesseract (`brew install tesseract`). OCR of image-only PDFs also needs Poppler's `pdftoppm` (`brew install poppler`) and the PDF extra above; it renders at most the first two pages at 150 DPI, capped at 2000 pixels. OCR runs locally, has a 30 second limit per process, and supports English in this prototype. Files with unavailable OCR, unreadable images, or encrypted PDFs remain in the plan for review. The plan records an `extraction_status` for each file.
 
 ## Try it on a test folder
 
@@ -76,7 +76,7 @@ python3 -m unittest discover -s tests -v
 
 ## Current limits
 
-The classifier is intentionally conservative and rule-based by default. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR, encrypted indexing, a menu bar interface, and FSEvents-based background integration remain planned features. The current watcher must be run from a terminal.
+The classifier is intentionally conservative and rule-based by default. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR is optional and currently limited to English and a few PDF pages. Encrypted indexing, a menu bar interface, and FSEvents-based background integration remain planned features. The current watcher must be run from a terminal.
 
 ### Optional local model
 
