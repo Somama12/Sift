@@ -1,6 +1,10 @@
 # Sift
 
-Sift is a local, preview-first file organizer for macOS. This repository contains a Python command-line prototype for **catch-up scans**, **guarded moves with undo**, and an **Autopilot suggestion inbox**. The [product and technical plan](SIFT_PRODUCT_TECHNICAL_PLAN.md) describes the later menu bar app, OCR, and richer local AI.
+Sift is a local, preview-first file organizer for macOS. This repository contains a native menu bar review app and a Python engine for **catch-up scans**, **guarded moves with undo**, and an **Autopilot suggestion inbox**. The [product and technical plan](SIFT_PRODUCT_TECHNICAL_PLAN.md) describes the longer-term product.
+
+## Native Mac app (development build)
+
+On an Apple Silicon Mac with macOS 13 or later, install the Python environment described below, then run `mac/build-app.sh` and open `build/Sift.app`. The menu bar item reopens the review window. The window has folder pickers, grouped proposals, per-file names and destinations, apply confirmation, local search, and batch undo. It calls the same guarded move engine as the CLI through a local JSON process bridge. This development build uses the repository's `.venv`; the app bundle is not yet standalone, signed, or notarized.
 
 ## Requirements
 
