@@ -10,6 +10,7 @@ from itertools import groupby
 from pathlib import Path
 
 from .core import apply, duplicates, history, recover, scan, search, undo
+from .doctor import diagnose
 from .watch import dismiss, inbox_plan, watch_tick
 
 
@@ -105,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     undo_cmd.add_argument("id")
     commands.add_parser("history", help="list batches")
     commands.add_parser("recover", help="reconcile interrupted moves")
+    commands.add_parser("doctor", help="check local PDF, OCR, and Ollama availability")
     args = parser.parse_args(argv)
     try:
         if args.command == "scan":
@@ -182,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "recover":
             for row in recover(database_path()):
                 print(json.dumps(row))
+        elif args.command == "doctor":
+            print(json.dumps(diagnose(), indent=2))
         return 0
     except KeyboardInterrupt:
         print("\nStopped watching. No files moved.")

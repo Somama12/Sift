@@ -13,6 +13,8 @@ python3 -m venv .venv
 
 Then use `.venv/bin/python -m sift` in the commands below. PDF text extraction reads at most the first 10 pages and 64,000 characters from PDFs smaller than 20 MB. For local OCR of `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`, and `.webp` images, install Tesseract (`brew install tesseract`). OCR of image-only PDFs also needs Poppler's `pdftoppm` (`brew install poppler`) and the PDF extra above; it renders at most the first two pages at 150 DPI, capped at 2000 pixels. OCR runs locally, has a 30 second limit per process, and supports English in this prototype. Files with unavailable OCR, unreadable images, or encrypted PDFs remain in the plan for review. The plan records an `extraction_status` for each file.
 
+Run `.venv/bin/sift doctor` to check which optional features are ready. It checks the local Ollama server without sending any file content.
+
 ## Try it on a test folder
 
 ```sh
