@@ -15,6 +15,7 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 SKIP_DIRS = {".git", ".svn", "node_modules", ".venv", "venv", "__pycache__"}
 PACKAGES = {".app", ".bundle", ".framework", ".photoslibrary", ".pages", ".numbers", ".key"}
@@ -268,14 +269,16 @@ def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[s
         return None
 
 
-def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None) -> dict:
+def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None, on_progress: Callable[[int, Path], None] | None = None) -> dict:
     source = source.expanduser().resolve()
     destination_root = destination_root.expanduser().resolve()
     if not source.is_dir():
         raise ValueError("Source must be a directory")
     mapped_folders, existing = destination_folders(destination_root, folder_map)
     items = []
-    for path in eligible_files(source, destination_root):
+    for number, path in enumerate(eligible_files(source, destination_root), start=1):
+        if on_progress is not None:
+            on_progress(number, path)
         item = proposal_for_file(path, destination_root, mapped_folders, existing, model)
         if item:
             items.append(item)

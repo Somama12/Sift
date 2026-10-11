@@ -30,6 +30,8 @@ SIFT_DB=/tmp/sift-demo/sift.sqlite3 python3 -m sift undo BATCH_ID
 
 `scan`, `show`, and `review` never move files. High-confidence proposals start selected; medium and low confidence proposals start unselected. `review` lets you approve, reject, or edit each proposal. `apply` prints the selected moves and requires typing `apply`; `--yes` is available for scripted use after plan review. Use `--ids ID1,ID2` to apply only chosen proposals. Sift checks that edited paths and source fingerprints remain valid.
 
+During a scan, Sift prints the number and path of each file it starts processing. This is useful when OCR or a cold local model takes time; the final JSON plan is written only after the scan finishes.
+
 For a large plan, use `python3 -m sift review /tmp/sift-demo/plan.json --groups`. Sift shows each destination group and its proposals, then lets you approve the group, deselect it, inspect files individually, or keep its current selections. Run ordinary `review` afterward to change individual selections or destinations.
 
 Sift uses an existing top-level folder when its name matches a category, ignoring case. To use your own structure, add mappings when scanning, such as `--map Receipts=Finance/Invoices --map School=Classes`. Mapped folders must remain inside the chosen destination root.

@@ -33,6 +33,18 @@ class SiftTests(unittest.TestCase):
         self.assertEqual(plan["items"][0]["name"], "Invoice from Smith.txt")
         self.assertTrue((self.source / "scan0023.txt").exists())
 
+    def test_scan_reports_each_eligible_file_before_processing(self):
+        first = self.source / "first.txt"
+        second = self.source / "second.txt"
+        first.write_text("receipt", encoding="utf-8")
+        second.write_text("lease", encoding="utf-8")
+        seen = []
+        plan = scan(self.source, self.destination, on_progress=lambda number, path: seen.append((number, path.name)))
+        self.assertEqual([number for number, _ in seen], [1, 2])
+        self.assertEqual({name for _, name in seen}, {"first.txt", "second.txt"})
+        self.assertEqual(len(plan["items"]), 2)
+        self.assertTrue(first.exists() and second.exists())
+
     def test_apply_collision_and_batch_undo(self):
         (self.source / "receipt.txt").write_text("first", encoding="utf-8")
         (self.source / "other").mkdir()
