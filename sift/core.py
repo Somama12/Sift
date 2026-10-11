@@ -279,10 +279,10 @@ def eligible_files(source: Path, destination_root: Path | None):
                     continue
 
 
-def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[str, Path], existing: dict[str, Path], model: str | None, correction_db_path: Path | None = None) -> dict | None:
+def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[str, Path], existing: dict[str, Path], model: str | None, correction_db_path: Path | None = None, deep: bool = True) -> dict | None:
     try:
         before = fingerprint(path)
-        content, extraction_status = extract(path)
+        content, extraction_status = extract(path) if deep else ("", "not_scanned")
         if fingerprint(path) != before:
             return None
         category, confidence, reason = classify(path, content)
@@ -312,7 +312,7 @@ def proposal_for_file(path: Path, destination_root: Path, mapped_folders: dict[s
         return None
 
 
-def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None, on_progress: Callable[[int, Path], None] | None = None, db_path: Path | None = None) -> dict:
+def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None, model: str | None = None, on_progress: Callable[[int, Path], None] | None = None, db_path: Path | None = None, deep: bool = True) -> dict:
     source = source.expanduser().resolve()
     destination_root = destination_root.expanduser().resolve()
     if not source.is_dir():
@@ -322,7 +322,7 @@ def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None
     for number, path in enumerate(eligible_files(source, destination_root), start=1):
         if on_progress is not None:
             on_progress(number, path)
-        item = proposal_for_file(path, destination_root, mapped_folders, existing, model, db_path)
+        item = proposal_for_file(path, destination_root, mapped_folders, existing, model, db_path, deep)
         if item:
             items.append(item)
     return {"version": 1, "created_at": now(), "source": str(source), "destination_root": str(destination_root), "items": sorted(items, key=lambda item: item["source"])}

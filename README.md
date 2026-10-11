@@ -6,6 +6,8 @@ Sift is a local, preview-first file organizer for macOS. This repository contain
 
 On an Apple Silicon Mac with macOS 13 or later, install the Python environment described below, then run `mac/build-app.sh` and open `build/Sift.app`. The menu bar item reopens the review window. The window has folder pickers, grouped proposals, per-file names and destinations, apply confirmation, local search, and batch undo. It calls the same guarded move engine as the CLI through a local JSON process bridge.
 
+The app starts with a fast filename scan. Enable **Read contents and OCR (slower)** when you need text from PDFs and images; large folders can take minutes in that mode. The window shows a file count while scanning, and **Cancel** stops the scan without moving files. The Ollama option applies only to a content scan.
+
 For a bundle with its own Python engine and PDF libraries, install PyInstaller into `.venv` and run `mac/build-release.sh`. The result is `dist/Sift-macOS-arm64.zip`. This local alpha build is ad-hoc signed; an Apple Developer signing identity and notarization are still needed for ordinary public distribution. Optional OCR needs Tesseract installed on the Mac. Optional model suggestions need Ollama and the local model installed and running. The bundled PDF renderer removes the Poppler requirement for scanned PDF OCR.
 
 ## Requirements

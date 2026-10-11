@@ -84,14 +84,18 @@ final class SiftModel: ObservableObject {
     @Published var source = UserDefaults.standard.string(forKey: "source") ?? ""
     @Published var destination = UserDefaults.standard.string(forKey: "destination") ?? ""
     @Published var useOllama = false
+    @Published var deepScan = false
     @Published var rows: [ProposalRow] = []
     @Published var history: [HistoryRow] = []
     @Published var query = ""
     @Published var searchRows: [SearchRow] = []
     @Published var status = "Choose a source folder and destination, then scan. Nothing moves until you apply a reviewed plan."
     @Published var busy = false
+    @Published var scanning = false
 
     private var plan: [String: Any]?
+    private var currentProcess: Process?
+    private var cancelRequested = false
 
     var categories: [String] { Array(Set(rows.map(\.category))).sorted() }
     var selectedCount: Int { rows.filter(\.selected).count }
@@ -124,9 +128,12 @@ final class SiftModel: ObservableObject {
             return
         }
         busy = true
-        status = "Scanning locally. OCR and the first model load can take time…"
-        invoke(["command": "scan", "source": source, "destination": destination, "ollama": useOllama]) { response in
+        scanning = true
+        cancelRequested = false
+        status = deepScan ? "Reading contents and OCR. This can take time…" : "Fast scan: checking filenames…"
+        invoke(["command": "scan", "source": source, "destination": destination, "ollama": useOllama && deepScan, "deep": deepScan]) { response in
             self.busy = false
+            self.scanning = false
             guard let plan = response["plan"] as? [String: Any], let items = plan["items"] as? [[String: Any]] else { return }
             self.plan = plan
             self.rows = items.compactMap { item in
@@ -143,6 +150,12 @@ final class SiftModel: ObservableObject {
             }
             self.status = "\(self.rows.count) proposals ready. \(self.selectedCount) selected; no files moved."
         }
+    }
+
+    func cancelScan() {
+        cancelRequested = true
+        status = "Canceling scan…"
+        currentProcess?.terminate()
     }
 
     func select(category: String, value: Bool) {
@@ -239,22 +252,48 @@ final class SiftModel: ObservableObject {
                 process.standardOutput = output
                 process.standardError = errors
                 try process.run()
+                DispatchQueue.main.async { self.currentProcess = process }
                 let bytes = try JSONSerialization.data(withJSONObject: request)
                 input.fileHandleForWriting.write(bytes)
                 input.fileHandleForWriting.closeFile()
+                let errorReader = DispatchGroup()
+                errorReader.enter()
+                DispatchQueue.global(qos: .utility).async {
+                    var pending = ""
+                    while true {
+                        let chunk = errors.fileHandleForReading.readData(ofLength: 4096)
+                        if chunk.isEmpty { break }
+                        pending += String(decoding: chunk, as: UTF8.self)
+                        while let newline = pending.firstIndex(of: "\n") {
+                            let line = String(pending[..<newline])
+                            pending.removeSubrange(...newline)
+                            if line.hasPrefix("PROGRESS ") {
+                                let number = line.dropFirst("PROGRESS ".count)
+                                DispatchQueue.main.async { self.status = "Scanned \(number) files…" }
+                            }
+                        }
+                    }
+                    errorReader.leave()
+                }
                 let responseData = output.fileHandleForReading.readDataToEndOfFile()
-                let errorData = errors.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
+                errorReader.wait()
                 let response = try JSONSerialization.jsonObject(with: responseData) as? [String: Any]
                 guard let response, response["ok"] as? Bool == true else {
-                    let message = (response?["error"] as? String) ?? String(data: errorData, encoding: .utf8) ?? "Unknown helper error"
+                    let message = (response?["error"] as? String) ?? "Helper stopped before completing"
                     throw NSError(domain: "Sift", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
                 }
-                DispatchQueue.main.async { completion(response) }
+                DispatchQueue.main.async {
+                    self.currentProcess = nil
+                    completion(response)
+                }
             } catch {
                 DispatchQueue.main.async {
+                    self.currentProcess = nil
                     self.busy = false
-                    self.status = "Sift error: \(error.localizedDescription)"
+                    self.scanning = false
+                    self.status = self.cancelRequested ? "Scan canceled. No files moved." : "Sift error: \(error.localizedDescription)"
+                    self.cancelRequested = false
                 }
             }
         }
@@ -284,9 +323,13 @@ struct ReviewWindow: View {
                 Button("Choose…") { model.chooseDestination() }
             }
             HStack {
+                Toggle("Read contents and OCR (slower)", isOn: $model.deepScan).disabled(model.busy)
                 Toggle("Use local Ollama for uncertain files", isOn: $model.useOllama)
                 Spacer()
                 Button("Scan") { model.scan() }.disabled(model.busy)
+                if model.scanning {
+                    Button("Cancel") { model.cancelScan() }
+                }
             }
             Text(model.status).font(.callout).foregroundStyle(.secondary)
             HStack {

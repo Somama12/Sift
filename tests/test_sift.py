@@ -52,6 +52,13 @@ class SiftTests(unittest.TestCase):
         self.assertEqual(item["reason"], "conflicting category signals")
         self.assertFalse(item["selected"])
 
+    def test_fast_scan_skips_content_extraction(self):
+        (self.source / "scan009.txt").write_text("Invoice from a store", encoding="utf-8")
+        item = scan(self.source, self.destination, deep=False)["items"][0]
+        self.assertEqual(item["extraction_status"], "not_scanned")
+        self.assertEqual(item["category"], "Review")
+        self.assertFalse(item["selected"])
+
     def test_apply_collision_and_batch_undo(self):
         (self.source / "receipt.txt").write_text("first", encoding="utf-8")
         (self.source / "other").mkdir()
