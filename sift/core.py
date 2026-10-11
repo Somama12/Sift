@@ -88,7 +88,7 @@ def propose_name(path: Path, content: str) -> str:
     return safe_name(stem) + path.suffix.lower()
 
 
-def scan(source: Path, destination_root: Path) -> dict:
+def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None = None) -> dict:
     source = source.expanduser().resolve()
     destination_root = destination_root.expanduser().resolve()
     if not source.is_dir():
@@ -97,6 +97,19 @@ def scan(source: Path, destination_root: Path) -> dict:
         raise ValueError("Destination root must be a directory")
     if not destination_root.exists() and not destination_root.parent.is_dir():
         raise ValueError("Destination parent must exist")
+    folder_map = folder_map or {}
+    valid_categories = set(KEYWORDS) | {"Installers", "Screenshots", "Review"}
+    if not set(folder_map) <= valid_categories:
+        raise ValueError("Folder map contains an unknown category")
+    mapped_folders = {}
+    for category, relative in folder_map.items():
+        suffix = Path(relative)
+        if suffix.is_absolute() or not suffix.parts or ".." in suffix.parts or "." in suffix.parts:
+            raise ValueError("Mapped folders must be relative paths inside the destination root")
+        mapped = destination_root / suffix
+        check_target(mapped / "placeholder", destination_root)
+        mapped_folders[category] = mapped
+    existing = {entry.name.casefold(): entry for entry in destination_root.iterdir() if entry.is_dir() and not entry.is_symlink()} if destination_root.exists() else {}
     items = []
     for root, dirs, files in os.walk(source, followlinks=False):
         folder = Path(root)
@@ -114,7 +127,8 @@ def scan(source: Path, destination_root: Path) -> dict:
                 if fingerprint(path) != before:
                     continue
                 category, confidence, reason = classify(path, content)
-                items.append({"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(destination_root / category), "name": propose_name(path, content), "category": category, "confidence": confidence, "reason": reason, "fingerprint": before, "selected": confidence == "high"})
+                target_folder = mapped_folders.get(category) or existing.get(category.casefold()) or destination_root / category
+                items.append({"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(target_folder), "name": propose_name(path, content), "category": category, "confidence": confidence, "reason": reason, "fingerprint": before, "selected": confidence == "high"})
             except (OSError, ValueError):
                 continue
     return {"version": 1, "created_at": now(), "source": str(source), "destination_root": str(destination_root), "items": sorted(items, key=lambda item: item["source"])}

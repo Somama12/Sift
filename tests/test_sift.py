@@ -62,6 +62,15 @@ class SiftTests(unittest.TestCase):
             self.assertEqual(main(["review", str(plan_file)]), 0)
         self.assertTrue(json.loads(plan_file.read_text())["items"][0]["selected"])
 
+    def test_folder_mapping_uses_existing_structure(self):
+        (self.source / "receipt.txt").write_text("example", encoding="utf-8")
+        target = self.destination / "Finance" / "Invoices"
+        target.mkdir(parents=True)
+        plan = scan(self.source, self.destination, {"Receipts": "Finance/Invoices"})
+        self.assertEqual(plan["items"][0]["destination_folder"], str(target.resolve()))
+        with self.assertRaises(ValueError):
+            scan(self.source, self.destination, {"Receipts": "../outside"})
+
     def test_undo_refuses_changed_destination(self):
         (self.source / "receipt.txt").write_text("original", encoding="utf-8")
         plan = scan(self.source, self.destination)

@@ -21,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
     scan_cmd.add_argument("source", type=Path)
     scan_cmd.add_argument("--to", dest="destination", type=Path, required=True)
     scan_cmd.add_argument("--output", type=Path, required=True)
+    scan_cmd.add_argument("--map", action="append", default=[], metavar="CATEGORY=FOLDER", help="use a folder inside the destination root for a category")
     show_cmd = commands.add_parser("show", help="review a saved plan")
     show_cmd.add_argument("plan", type=Path)
     review_cmd = commands.add_parser("review", help="select and edit proposals in a saved plan")
@@ -36,7 +37,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "scan":
-            plan = scan(args.source, args.destination)
+            folder_map = {}
+            for mapping in args.map:
+                if "=" not in mapping:
+                    raise ValueError("Folder mapping must be CATEGORY=FOLDER")
+                category, folder = mapping.split("=", 1)
+                folder_map[category] = folder
+            plan = scan(args.source, args.destination, folder_map)
             args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
             print(f"Saved {len(plan['items'])} proposals to {args.output}. No files moved.")
         elif args.command in {"show", "review", "apply"}:
