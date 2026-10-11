@@ -58,6 +58,14 @@ python3 -m sift duplicates ~/Downloads
 
 Sift groups files with the same byte size and SHA-256 hash. It reads and reports them locally, without changing or deleting anything. Files that change while being hashed are omitted. Near-duplicate detection is a later feature.
 
+## Local keyword search
+
+```sh
+python3 -m sift search ~/Documents "lease agreement"
+```
+
+Search reads supported files on demand and ranks filename matches above content matches. It stores no search index or extracted text. It is keyword search rather than semantic or conversational search; broad folders can take time to scan. PDF content is available when the optional PDF extra is installed.
+
 ## Run tests
 
 ```sh

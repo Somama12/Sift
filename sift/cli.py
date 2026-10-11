@@ -8,7 +8,7 @@ import os
 import time
 from pathlib import Path
 
-from .core import apply, duplicates, history, recover, scan, undo
+from .core import apply, duplicates, history, recover, scan, search, undo
 from .watch import dismiss, inbox_plan, watch_tick
 
 
@@ -50,6 +50,10 @@ def main(argv: list[str] | None = None) -> int:
     dismiss_cmd.add_argument("id")
     duplicates_cmd = commands.add_parser("duplicates", help="report exact duplicate files without changing them")
     duplicates_cmd.add_argument("source", type=Path)
+    search_cmd = commands.add_parser("search", help="search filenames and supported document text locally")
+    search_cmd.add_argument("source", type=Path)
+    search_cmd.add_argument("query")
+    search_cmd.add_argument("--limit", type=int, default=20)
     show_cmd = commands.add_parser("show", help="review a saved plan")
     show_cmd.add_argument("plan", type=Path)
     review_cmd = commands.add_parser("review", help="select and edit proposals in a saved plan")
@@ -90,6 +94,11 @@ def main(argv: list[str] | None = None) -> int:
             for group in groups:
                 print(json.dumps(group))
             print(f"{len(groups)} duplicate groups. No files changed.")
+        elif args.command == "search":
+            results = search(args.source, args.query, args.limit)
+            for result in results:
+                print(json.dumps(result))
+            print(f"{len(results)} results. No files changed.")
         elif args.command in {"show", "review", "apply"}:
             plan = json.loads(args.plan.read_text(encoding="utf-8"))
             selected = set(args.ids.split(",")) if args.command == "apply" and args.ids else {item["id"] for item in plan["items"] if item.get("selected", False)}

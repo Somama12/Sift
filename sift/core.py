@@ -262,6 +262,34 @@ def duplicates(source: Path) -> list[dict]:
     return sorted(groups, key=lambda group: (-group["size"], group["paths"][0]))
 
 
+def search(source: Path, query: str, limit: int = 20) -> list[dict]:
+    """Search names and extracted text locally without storing an index."""
+    source = source.expanduser().resolve()
+    if not source.is_dir():
+        raise ValueError("Search source must be a directory")
+    if limit < 1:
+        raise ValueError("Search limit must be positive")
+    stopwords = {"find", "show", "me", "my", "the", "a", "an", "from", "for", "in", "of", "to", "file", "files", "document", "documents"}
+    terms = [term for term in re.findall(r"\w+", query.casefold()) if term not in stopwords and len(term) > 1]
+    if not terms:
+        raise ValueError("Search query needs a descriptive word")
+    matches = []
+    for path in eligible_files(source, None):
+        try:
+            before = fingerprint(path)
+            content, extraction_status = extract(path)
+            if fingerprint(path) != before:
+                continue
+            name = path.name.casefold()
+            text = content.casefold()
+            score = sum(5 * name.count(term) + min(text.count(term), 3) for term in terms)
+            if score:
+                matches.append({"path": str(path), "score": score, "extraction_status": extraction_status})
+        except (OSError, ValueError):
+            continue
+    return sorted(matches, key=lambda result: (-result["score"], result["path"]))[:limit]
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path)
