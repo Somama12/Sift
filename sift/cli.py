@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     scan_cmd.add_argument("--to", dest="destination", type=Path, required=True)
     scan_cmd.add_argument("--output", type=Path, required=True)
     scan_cmd.add_argument("--map", action="append", default=[], metavar="CATEGORY=FOLDER", help="use a folder inside the destination root for a category")
+    scan_cmd.add_argument("--ollama", action="store_true", help="ask local Ollama qwen3:4b-instruct for low-confidence text files")
     show_cmd = commands.add_parser("show", help="review a saved plan")
     show_cmd.add_argument("plan", type=Path)
     review_cmd = commands.add_parser("review", help="select and edit proposals in a saved plan")
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
                     raise ValueError("Folder mapping must be CATEGORY=FOLDER")
                 category, folder = mapping.split("=", 1)
                 folder_map[category] = folder
-            plan = scan(args.source, args.destination, folder_map)
+            plan = scan(args.source, args.destination, folder_map, model="qwen3:4b-instruct" if args.ollama else None)
             args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
             print(f"Saved {len(plan['items'])} proposals to {args.output}. No files moved.")
         elif args.command in {"show", "review", "apply"}:
@@ -54,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("Unknown proposal ID")
             for item in sorted(plan["items"], key=lambda item: (item["destination_folder"], item["source"])):
                 if args.command == "review":
-                    print(f"\n[{item['confidence']}] {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')})")
+                    print(f"\n[{item['confidence']}] {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')}; model: {item.get('model_status', 'not_requested')})")
                     choice = input("Approve? [y/N/e] (e = edit destination/name): ").strip().lower()
                     if choice == "e":
                         folder = input(f"Destination folder [{item['destination_folder']}]: ").strip()
@@ -68,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
                         item["selected"] = choice in {"y", "yes"}
                 elif args.command == "show" or item["id"] in selected:
                     mark = "x" if item.get("selected") else " "
-                    print(f"[{mark}] [{item['confidence']}] {item['id']}  {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')})")
+                    print(f"[{mark}] [{item['confidence']}] {item['id']}  {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']}; extraction: {item.get('extraction_status', 'unknown')}; model: {item.get('model_status', 'not_requested')})")
             if args.command == "review":
                 args.plan.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
                 print(f"Saved review: {sum(item['selected'] for item in plan['items'])} selected. No files moved.")

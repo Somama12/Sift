@@ -40,4 +40,8 @@ python3 -m unittest discover -s tests -v
 
 ## Current limits
 
-The classifier is intentionally conservative and rule-based. This release does **not** claim AI document understanding. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR, local model inference, encrypted indexing, a menu bar interface, and background watching remain planned features. The planned prototype model runtime is Ollama with `qwen3:4b-instruct` for ambiguous files, subject to local quality and performance tests; it is not installed or used by this version.
+The classifier is intentionally conservative and rule-based by default. It skips hidden files, symlinks, app bundles, nested Git projects, and temporary download suffixes. OCR, encrypted indexing, a menu bar interface, and background watching remain planned features.
+
+### Optional local model
+
+Install [Ollama](https://ollama.com/download/mac), pull `qwen3:4b-instruct`, and ensure its local server is running. Add `--ollama` to `sift scan` to ask the model about low-confidence files with extracted text. Sift calls only `127.0.0.1:11434`; it cannot be pointed at a remote host. The model can return only an allowed category and a proposed filename. Sift validates both, preserves the original file extension, and keeps every model proposal unselected for review. If the model is unavailable or returns an invalid answer, rule-based classification remains in the plan. The plan's `model_status` field shows whether the model was used. Model quality and speed have not yet been benchmarked on this Mac.

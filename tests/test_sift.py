@@ -3,7 +3,7 @@ import unittest
 import json
 import importlib.util
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from sift.core import apply, history, recover, scan, undo
 from sift.cli import main
@@ -82,6 +82,37 @@ class SiftTests(unittest.TestCase):
         self.assertEqual(plan["items"][0]["category"], "Receipts")
         self.assertEqual(plan["items"][0]["extraction_status"], "pdf_text")
         self.assertIn("Invoice", plan["items"][0]["name"])
+
+    def test_local_model_suggestion_is_validated_and_unselected(self):
+        (self.source / "scan005.txt").write_text("Meeting notes about the rental property", encoding="utf-8")
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = json.dumps({"message": {"content": json.dumps({"category": "Contracts", "filename": "Lease Agreement.pdf"})}}).encode()
+        connection = MagicMock()
+        connection.getresponse.return_value = response
+        with patch("sift.core.http.client.HTTPConnection", return_value=connection) as constructor:
+            plan = scan(self.source, self.destination, model="qwen3:4b-instruct")
+        constructor.assert_called_once_with("127.0.0.1", 11434, timeout=15)
+        payload = json.loads(connection.request.call_args.kwargs["body"])
+        self.assertEqual(payload["model"], "qwen3:4b-instruct")
+        item = plan["items"][0]
+        self.assertEqual(item["category"], "Contracts")
+        self.assertEqual(item["name"], "Lease Agreement.txt")
+        self.assertEqual(item["model_status"], "used")
+        self.assertFalse(item["selected"])
+
+    def test_invalid_model_category_falls_back_to_rules(self):
+        (self.source / "scan005.txt").write_text("This text has no known category", encoding="utf-8")
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = json.dumps({"message": {"content": json.dumps({"category": "../../Secrets", "filename": "bad.txt"})}}).encode()
+        connection = MagicMock()
+        connection.getresponse.return_value = response
+        with patch("sift.core.http.client.HTTPConnection", return_value=connection):
+            plan = scan(self.source, self.destination, model="qwen3:4b-instruct")
+        item = plan["items"][0]
+        self.assertEqual(item["category"], "Review")
+        self.assertEqual(item["model_status"], "unavailable_or_invalid")
 
     def test_undo_refuses_changed_destination(self):
         (self.source / "receipt.txt").write_text("original", encoding="utf-8")
