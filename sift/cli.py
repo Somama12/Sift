@@ -8,7 +8,7 @@ import os
 import time
 from pathlib import Path
 
-from .core import apply, history, recover, scan, undo
+from .core import apply, duplicates, history, recover, scan, undo
 from .watch import dismiss, inbox_plan, watch_tick
 
 
@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     inbox_cmd.add_argument("--output", type=Path, required=True)
     dismiss_cmd = commands.add_parser("dismiss", help="remove a suggestion from the inbox")
     dismiss_cmd.add_argument("id")
+    duplicates_cmd = commands.add_parser("duplicates", help="report exact duplicate files without changing them")
+    duplicates_cmd.add_argument("source", type=Path)
     show_cmd = commands.add_parser("show", help="review a saved plan")
     show_cmd.add_argument("plan", type=Path)
     review_cmd = commands.add_parser("review", help="select and edit proposals in a saved plan")
@@ -83,6 +85,11 @@ def main(argv: list[str] | None = None) -> int:
             if not dismiss(args.id, database_path()):
                 raise ValueError("Suggestion ID not found")
             print("Suggestion dismissed. No files moved.")
+        elif args.command == "duplicates":
+            groups = duplicates(args.source)
+            for group in groups:
+                print(json.dumps(group))
+            print(f"{len(groups)} duplicate groups. No files changed.")
         elif args.command in {"show", "review", "apply"}:
             plan = json.loads(args.plan.read_text(encoding="utf-8"))
             selected = set(args.ids.split(",")) if args.command == "apply" and args.ids else {item["id"] for item in plan["items"] if item.get("selected", False)}

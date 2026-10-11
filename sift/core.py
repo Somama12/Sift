@@ -178,14 +178,14 @@ def destination_folders(destination_root: Path, folder_map: dict[str, str] | Non
     return mapped_folders, existing
 
 
-def eligible_files(source: Path, destination_root: Path):
+def eligible_files(source: Path, destination_root: Path | None):
     """Yield regular files while excluding packages, projects, and incomplete downloads."""
     for root, dirs, files in os.walk(source, followlinks=False):
         folder = Path(root)
-        if inside(folder, destination_root) or (folder / ".git").exists():
+        if (destination_root is not None and inside(folder, destination_root)) or (folder / ".git").exists():
             dirs[:] = []
             continue
-        dirs[:] = [name for name in dirs if not name.startswith(".") and name not in SKIP_DIRS and Path(name).suffix.lower() not in PACKAGES and not (folder / name).is_symlink() and not (folder / name / ".git").exists() and not inside(folder / name, destination_root)]
+        dirs[:] = [name for name in dirs if not name.startswith(".") and name not in SKIP_DIRS and Path(name).suffix.lower() not in PACKAGES and not (folder / name).is_symlink() and not (folder / name / ".git").exists() and (destination_root is None or not inside(folder / name, destination_root))]
         for name in files:
             path = folder / name
             if not name.startswith(".") and path.suffix.lower() not in TEMP and not path.is_symlink():
@@ -230,6 +230,36 @@ def scan(source: Path, destination_root: Path, folder_map: dict[str, str] | None
         if item:
             items.append(item)
     return {"version": 1, "created_at": now(), "source": str(source), "destination_root": str(destination_root), "items": sorted(items, key=lambda item: item["source"])}
+
+
+def duplicates(source: Path) -> list[dict]:
+    """Report exact duplicate files; only hash files with matching sizes."""
+    source = source.expanduser().resolve()
+    if not source.is_dir():
+        raise ValueError("Duplicate source must be a directory")
+    by_size: dict[int, list[tuple[Path, dict]]] = {}
+    for path in eligible_files(source, None):
+        try:
+            state = fingerprint(path)
+            by_size.setdefault(state["size"], []).append((path, state))
+        except (OSError, ValueError):
+            continue
+    groups = []
+    for size, candidates in by_size.items():
+        if len(candidates) < 2:
+            continue
+        by_hash: dict[str, list[str]] = {}
+        for path, before in candidates:
+            try:
+                sha = digest(path)
+                if fingerprint(path) == before:
+                    by_hash.setdefault(sha, []).append(str(path))
+            except (OSError, ValueError):
+                continue
+        for sha, paths in by_hash.items():
+            if len(paths) > 1:
+                groups.append({"sha256": sha, "size": size, "paths": sorted(paths)})
+    return sorted(groups, key=lambda group: (-group["size"], group["paths"][0]))
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

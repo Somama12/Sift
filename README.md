@@ -50,6 +50,14 @@ python3 -m sift apply /tmp/sift-inbox.plan.json
 
 All Autopilot suggestions begin unselected, including installers and screenshots. Use `sift dismiss PROPOSAL_ID` to remove an unwanted suggestion; changing the file later makes it eligible again. `sift watch ... --once` makes one observation and exits, which is useful for testing. `--map` and `--ollama` work with `watch` as they do with `scan`.
 
+## Exact duplicates
+
+```sh
+python3 -m sift duplicates ~/Downloads
+```
+
+Sift groups files with the same byte size and SHA-256 hash. It reads and reports them locally, without changing or deleting anything. Files that change while being hashed are omitted. Near-duplicate detection is a later feature.
+
 ## Run tests
 
 ```sh
