@@ -23,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     scan_cmd.add_argument("--output", type=Path, required=True)
     show_cmd = commands.add_parser("show", help="review a saved plan")
     show_cmd.add_argument("plan", type=Path)
+    review_cmd = commands.add_parser("review", help="select and edit proposals in a saved plan")
+    review_cmd.add_argument("plan", type=Path)
     apply_cmd = commands.add_parser("apply", help="apply reviewed proposals")
     apply_cmd.add_argument("plan", type=Path)
     apply_cmd.add_argument("--ids", help="comma-separated proposal IDs; omit to select all")
@@ -37,15 +39,33 @@ def main(argv: list[str] | None = None) -> int:
             plan = scan(args.source, args.destination)
             args.output.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
             print(f"Saved {len(plan['items'])} proposals to {args.output}. No files moved.")
-        elif args.command in {"show", "apply"}:
+        elif args.command in {"show", "review", "apply"}:
             plan = json.loads(args.plan.read_text(encoding="utf-8"))
-            selected = set(args.ids.split(",")) if args.command == "apply" and args.ids else {item["id"] for item in plan["items"]}
+            selected = set(args.ids.split(",")) if args.command == "apply" and args.ids else {item["id"] for item in plan["items"] if item.get("selected", False)}
             known = {item["id"] for item in plan["items"]}
             if not selected <= known:
                 raise ValueError("Unknown proposal ID")
-            for item in plan["items"]:
-                if item["id"] in selected:
-                    print(f"[{item['confidence']}] {item['id']}  {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']})")
+            for item in sorted(plan["items"], key=lambda item: (item["destination_folder"], item["source"])):
+                if args.command == "review":
+                    print(f"\n[{item['confidence']}] {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']})")
+                    choice = input("Approve? [y/N/e] (e = edit destination/name): ").strip().lower()
+                    if choice == "e":
+                        folder = input(f"Destination folder [{item['destination_folder']}]: ").strip()
+                        name = input(f"Name [{item['name']}]: ").strip()
+                        if folder:
+                            item["destination_folder"] = folder
+                        if name:
+                            item["name"] = name
+                        item["selected"] = True
+                    else:
+                        item["selected"] = choice in {"y", "yes"}
+                elif args.command == "show" or item["id"] in selected:
+                    mark = "x" if item.get("selected") else " "
+                    print(f"[{mark}] [{item['confidence']}] {item['id']}  {item['source']} -> {item['destination_folder']}/{item['name']} ({item['reason']})")
+            if args.command == "review":
+                args.plan.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+                print(f"Saved review: {sum(item['selected'] for item in plan['items'])} selected. No files moved.")
+                return 0
             print(f"{len(selected)} selected; no files moved yet.")
             if args.command == "apply":
                 if not args.yes and input("Apply these moves? Type 'apply' to continue: ").strip() != "apply":

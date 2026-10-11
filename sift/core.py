@@ -114,7 +114,7 @@ def scan(source: Path, destination_root: Path) -> dict:
                 if fingerprint(path) != before:
                     continue
                 category, confidence, reason = classify(path, content)
-                items.append({"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(destination_root / category), "name": propose_name(path, content), "category": category, "confidence": confidence, "reason": reason, "fingerprint": before})
+                items.append({"id": uuid.uuid4().hex, "source": str(path), "destination_folder": str(destination_root / category), "name": propose_name(path, content), "category": category, "confidence": confidence, "reason": reason, "fingerprint": before, "selected": confidence == "high"})
             except (OSError, ValueError):
                 continue
     return {"version": 1, "created_at": now(), "source": str(source), "destination_root": str(destination_root), "items": sorted(items, key=lambda item: item["source"])}

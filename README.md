@@ -13,12 +13,13 @@ mkdir -p /tmp/sift-demo/Downloads /tmp/sift-demo/Organized
 printf 'Invoice from Example Company\n' > /tmp/sift-demo/Downloads/scan001.txt
 python3 -m sift scan /tmp/sift-demo/Downloads --to /tmp/sift-demo/Organized --output /tmp/sift-demo/plan.json
 python3 -m sift show /tmp/sift-demo/plan.json
+python3 -m sift review /tmp/sift-demo/plan.json
 SIFT_DB=/tmp/sift-demo/sift.sqlite3 python3 -m sift apply /tmp/sift-demo/plan.json
 SIFT_DB=/tmp/sift-demo/sift.sqlite3 python3 -m sift history
 SIFT_DB=/tmp/sift-demo/sift.sqlite3 python3 -m sift undo BATCH_ID
 ```
 
-`scan` and `show` never move files. `apply` prints the exact selected moves and requires typing `apply`; `--yes` is available for scripted use after plan review. Use `--ids ID1,ID2` to apply only chosen proposals. Proposal destination folders and names can be edited in the JSON plan before applying. Sift checks that paths and source fingerprints remain valid.
+`scan`, `show`, and `review` never move files. High-confidence proposals start selected; medium and low confidence proposals start unselected. `review` lets you approve, reject, or edit each proposal. `apply` prints the selected moves and requires typing `apply`; `--yes` is available for scripted use after plan review. Use `--ids ID1,ID2` to apply only chosen proposals. Sift checks that edited paths and source fingerprints remain valid.
 
 Sift never deletes files. It only supports moves within one filesystem in this prototype; cross-volume moves fail safely. It resolves name collisions with `(2)`, `(3)`, etc. The default history database is `~/Library/Application Support/Sift/sift.sqlite3`; set `SIFT_DB` to change it. `recover` reconciles interrupted moves, and `undo` does this automatically. An unchanged moved file can be undone if its original path is free. If a file changed or a path is occupied, undo leaves it untouched and reports the conflict.
 

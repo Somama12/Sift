@@ -1,9 +1,11 @@
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 from sift.core import apply, history, recover, scan, undo
+from sift.cli import main
 
 
 class SiftTests(unittest.TestCase):
@@ -50,6 +52,15 @@ class SiftTests(unittest.TestCase):
         _, result = apply(plan, {plan["items"][0]["id"]}, self.db)
         self.assertEqual(result[0]["state"], "failed")
         self.assertEqual(file.read_text(), "different")
+
+    def test_review_selects_low_confidence_proposal(self):
+        (self.source / "scan001.txt").write_text("Invoice from Smith", encoding="utf-8")
+        plan_file = self.root / "plan.json"
+        plan_file.write_text(json.dumps(scan(self.source, self.destination)), encoding="utf-8")
+        self.assertFalse(json.loads(plan_file.read_text())["items"][0]["selected"])
+        with patch("builtins.input", return_value="y"):
+            self.assertEqual(main(["review", str(plan_file)]), 0)
+        self.assertTrue(json.loads(plan_file.read_text())["items"][0]["selected"])
 
     def test_undo_refuses_changed_destination(self):
         (self.source / "receipt.txt").write_text("original", encoding="utf-8")
